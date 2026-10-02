@@ -518,6 +518,9 @@ def _model_results(artifacts: Dict[str, Any]) -> str:
              "# features"],
             rows,
         ),
+        "",
+        "_Selection uses the validation split; only the top-ranked models are scored on the held-out test "
+        "set, so blank test cells were never evaluated there._",
     ]
     return "\n".join(lines)
 
