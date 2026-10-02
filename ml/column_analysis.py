@@ -99,7 +99,7 @@ def is_datetime_series(series: pd.Series) -> bool:
 def is_categorical_series(series: pd.Series, max_unique: int = 100) -> bool:
     if is_boolean_series(series):
         return True
-    if pd.api.types.is_categorical_dtype(series):
+    if isinstance(series.dtype, pd.CategoricalDtype):
         return True
     if is_numeric_series(series) or is_datetime_series(series):
         return False
@@ -110,7 +110,7 @@ def is_categorical_series(series: pd.Series, max_unique: int = 100) -> bool:
 def is_text_series(series: pd.Series, max_unique: int = 100, long_text_chars: int = 60) -> bool:
     if is_numeric_series(series) or is_datetime_series(series) or is_boolean_series(series):
         return False
-    if pd.api.types.is_categorical_dtype(series):
+    if isinstance(series.dtype, pd.CategoricalDtype):
         return False
     try:
         values = series.dropna().astype(str)
@@ -361,7 +361,7 @@ def column_roles(df: pd.DataFrame) -> Dict[str, List[str]]:
             datetime_cols.append(str(column))
         elif is_numeric_series(series):
             numeric.append(str(column))
-        elif pd.api.types.is_categorical_dtype(series) or is_categorical_series(
+        elif isinstance(series.dtype, pd.CategoricalDtype) or is_categorical_series(
             series, max_unique=settings.eda_max_categories * 5
         ):
             categorical.append(str(column))

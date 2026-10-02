@@ -60,6 +60,8 @@ def test_supervised_pipeline_end_to_end(settings, classification_csv, tmp_path) 
 
     summary = run_summary("supervised-test")
     assert summary["summary"]["best_model"] == meta["model"]["name"]
+    assert summary["summary"]["gate_status"] is gate.passed
+    assert summary["summary"]["gate_score"] == gate.score
     assert summary["artifacts"]
 
 
@@ -105,6 +107,27 @@ def test_deployed_model_scores_new_records(settings, classification_csv) -> None
     drift = service.check_drift(frame)
     assert drift["status"] in {"ok", "warning", "drift", "no_data"} or "status" in drift
     assert "recommended" in service.retraining_recommendation()
+
+
+def test_logistic_regression_builder_spans_sklearn_versions() -> None:
+    """The search space uses l1_ratio, but legacy penalty configs must still work."""
+    import warnings
+
+    from sklearn.linear_model import LogisticRegression
+
+    from ml.registry import build_logistic_regression, get_algorithm
+
+    space = get_algorithm("logistic_regression").param_space
+    assert "l1_ratio" in space and "penalty" not in space
+
+    with warnings.catch_warnings(record=True) as caught:
+        warnings.simplefilter("always")
+        l2 = build_logistic_regression({"C": 1.0, "l1_ratio": 0.0})
+        legacy = build_logistic_regression({"C": 2.0, "penalty": "l1", "solver": "lbfgs"})
+    assert isinstance(l2, LogisticRegression) and isinstance(legacy, LogisticRegression)
+    # an L1 penalty needs a solver that supports it
+    assert legacy.solver == "saga"
+    assert not [item for item in caught if item.category is FutureWarning]
 
 
 def test_missing_model_raises_a_friendly_error(settings) -> None:

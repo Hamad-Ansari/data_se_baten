@@ -88,10 +88,35 @@ def _sklearn():
 
 
 def build_logistic_regression(params: Dict[str, Any], random_state: int = 42, **_: Any):
-    from sklearn.linear_model import LogisticRegression
+    """Logistic regression across sklearn versions.
 
-    defaults = dict(max_iter=2000, solver="lbfgs", class_weight=None)
+    scikit-learn 1.8 deprecated ``penalty`` in favour of ``l1_ratio``; older
+    versions only understand ``penalty``.  The search space proposes
+    ``l1_ratio``, so translate it when running on an older sklearn.
+    """
+    from sklearn.linear_model import LogisticRegression
+    import sklearn
+
+    params = dict(params or {})
+    l1_ratio = params.pop("l1_ratio", None)
+    penalty = params.pop("penalty", None)
+    if l1_ratio is None and penalty is not None:
+        l1_ratio = {"l1": 1.0, "l2": 0.0, "elasticnet": 0.5, "none": 0.0}.get(str(penalty).lower(), 0.0)
+
+    major, minor = (int(part) for part in sklearn.__version__.split(".")[:2])
+    defaults: Dict[str, Any] = {"max_iter": 2000, "class_weight": None}
+    if l1_ratio not in (None, 0.0):
+        defaults["solver"] = "saga"
+    if (major, minor) >= (1, 8):
+        if l1_ratio is not None:
+            defaults["l1_ratio"] = float(l1_ratio)
+    else:  # pragma: no cover - depends on the installed sklearn
+        if l1_ratio is not None:
+            defaults["penalty"] = {0.0: "l2", 1.0: "l1"}.get(float(l1_ratio), "elasticnet")
     defaults.update(params)
+    # a legacy config may still carry a solver that cannot handle L1/elastic net
+    if defaults.get("l1_ratio") and str(defaults.get("solver", "lbfgs")) not in {"saga", "liblinear"}:
+        defaults["solver"] = "saga"
     return LogisticRegression(random_state=random_state, **defaults)
 
 
@@ -412,8 +437,8 @@ ALGORITHMS: Dict[str, AlgorithmSpec] = {
         builder=build_logistic_regression,
         param_space={
             "C": {"type": "float", "low": 1e-3, "high": 1e3, "log": True},
-            "penalty": {"type": "categorical", "choices": ["l2", "l1", "elasticnet"]},
-            "solver": {"type": "categorical", "choices": ["lbfgs", "liblinear", "saga"]},
+            # 0 = L2, 1 = L1, in between = elastic net (sklearn >= 1.8 API)
+            "l1_ratio": {"type": "categorical", "choices": [0.0, 1.0, 0.5]},
         },
         supports_probability=True,
         needs_scaling=True,

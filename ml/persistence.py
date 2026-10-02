@@ -206,17 +206,21 @@ class RunStore:
 
     @classmethod
     def delete(cls, run_id: str, settings: Optional[Settings] = None) -> bool:
+        """Delete a run folder and always prune it from the run index."""
         settings = settings or get_settings()
         root = Path(settings.processed_dir) / run_id
-        if not root.exists():
-            return False
-        shutil.rmtree(root, ignore_errors=True)
+        existed = root.exists()
+        if existed:
+            shutil.rmtree(root, ignore_errors=True)
         index_path = Path(settings.processed_dir) / INDEX_FILENAME
         from utils.files import read_json
 
-        entries = [e for e in (read_json(index_path, default=[]) or []) if e.get("run_id") != run_id]
-        write_json(index_path, entries)
-        return True
+        entries = read_json(index_path, default=[]) or []
+        remaining = [entry for entry in entries if entry.get("run_id") != run_id]
+        if len(remaining) != len(entries):
+            write_json(index_path, remaining)
+            existed = True
+        return existed
 
     # ---------------------------------------------------------------- meta
     def save_meta(self) -> Path:
@@ -476,7 +480,8 @@ class RunStore:
             "best_model": (meta.get("model") or {}).get("name"),
             "primary_metric": (meta.get("model") or {}).get("primary_metric"),
             "primary_score": (meta.get("model") or {}).get("primary_score"),
-            "gate_status": (meta.get("model") or {}).get("gate_status"),
+            "gate_status": RunStore._gate_status(meta),
+            "gate_score": (meta.get("gate") or {}).get("score"),
             "error": meta.get("error"),
         }
 
@@ -494,6 +499,17 @@ class RunStore:
         entries.append(current)
         entries.sort(key=lambda item: item.get("created_at") or "", reverse=True)
         write_json(index_path, entries)
+
+    @staticmethod
+    def _gate_status(meta: Dict[str, Any]) -> Optional[bool]:
+        """Whether the quality gate passed (``gate`` is the canonical location)."""
+        gate = meta.get("gate") or {}
+        if "passed" in gate:
+            return bool(gate["passed"])
+        model = meta.get("model") or {}
+        if model.get("gate_status") is not None:
+            return bool(model["gate_status"])
+        return None
 
     @staticmethod
     def _index_entry(meta: Dict[str, Any]) -> Dict[str, Any]:
@@ -514,7 +530,8 @@ class RunStore:
             "best_model": model.get("name"),
             "primary_metric": model.get("primary_metric"),
             "primary_score": model.get("primary_score"),
-            "gate_status": model.get("gate_status"),
+            "gate_status": RunStore._gate_status(meta),
+            "gate_score": (meta.get("gate") or {}).get("score"),
         }
 
 

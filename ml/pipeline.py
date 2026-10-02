@@ -634,6 +634,12 @@ def stage_optimize(
                 ctx, record.key, result, feature_plan=ctx.feature_plan, store=store, stage="optimized"
             )
             if experiment is not None:
+                # the stability estimate belongs to the algorithm, so carry the
+                # candidate's cross-validation result over to its optimised twin
+                if record.cv_mean is not None or record.cv_scores:
+                    experiment.cv_scores = list(record.cv_scores)
+                    experiment.cv_mean = record.cv_mean
+                    experiment.cv_std = record.cv_std
                 improved.append(experiment)
     store.save_json("optimization.json", [result.to_dict() for result in results])
     append_experiments(store, improved)
@@ -674,6 +680,13 @@ def stage_evaluate(
         )
     payload: List[Dict[str, Any]] = []
     cv_payload = store.load_json("cross_validation.json", default={}) or {}
+    # an optimised model may not have its own CV entry, so remember what the
+    # same algorithm achieved when it was cross-validated as a candidate
+    cv_by_key: Dict[str, Dict[str, Any]] = {}
+    for experiment in records:
+        entry = cv_payload.get(experiment.experiment_id)
+        if entry and experiment.key not in cv_by_key:
+            cv_by_key[experiment.key] = entry
     best_record: Optional[Experiment] = None
     best_pipeline = None
     for record in rank_experiments(candidates, metric)[:3]:
@@ -685,7 +698,7 @@ def stage_evaluate(
         if pipeline is None:
             continue
         metrics = evaluate_on_test(ctx, pipeline, record)
-        cv_record = cv_payload.get(record.experiment_id) or {}
+        cv_record = cv_payload.get(record.experiment_id) or cv_by_key.get(record.key) or {}
         cv_mean = record.cv_mean if record.cv_mean is not None else cv_record.get("cv_mean")
         cv_std = record.cv_std if record.cv_std is not None else cv_record.get("cv_std")
         entry = {

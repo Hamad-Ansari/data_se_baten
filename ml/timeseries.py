@@ -406,14 +406,20 @@ def run_forecasting(
             {"timestamp": str(index), "value": round(float(value), 6)}
             for index, value in series.tail(MAX_HISTORY_POINTS).items()
         ]
+        # the winner's backtest predictions (fall back to a seasonal naive line)
+        backtest_prediction = None
+        if best:
+            backtest = best.get("backtest")
+            if isinstance(backtest, dict):
+                candidate = backtest.get("prediction")
+                if candidate is not None and len(candidate) == len(actual):
+                    backtest_prediction = candidate
+        if backtest_prediction is None:
+            backtest_prediction = _seasonal_naive(history, len(actual), seasonal)
         backtest_rows = [
             {"timestamp": str(index), "actual": round(float(actual.loc[index]), 6),
              "predicted": round(float(pred), 6)}
-            for index, pred in zip(
-                actual.index,
-                (best.get("backtest", {}).get("prediction") if best and isinstance(best.get("backtest"), dict) else
-                 _seasonal_naive(history, len(actual), seasonal)),
-            )
+            for index, pred in zip(actual.index, backtest_prediction)
         ] if len(actual) else []
 
     return ForecastResult(

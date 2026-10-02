@@ -150,21 +150,6 @@ class FrequencyEncoder(BaseEstimator, TransformerMixin):
         return np.asarray([f"{column}__frequency" for column in self.columns_])
 
 
-class MissingIndicatorNames:
-    """Utility to expose feature names of numeric imputers with indicators."""
-
-    @staticmethod
-    def names(imputer: Any, base_columns: Sequence[str]) -> List[str]:
-        names = list(base_columns)
-        if getattr(imputer, "add_indicator", False):
-            mask = getattr(imputer, "indicator_", None)
-            if mask is not None:
-                features = getattr(mask, "features_", None)
-                if features is not None:
-                    names.extend(f"{base_columns[index]}__missing" for index in features if index < len(base_columns))
-        return names
-
-
 # ---------------------------------------------------------------------------
 # feature plan
 # ---------------------------------------------------------------------------
@@ -684,7 +669,6 @@ __all__ = [
     "DatetimeFeatureExtractor",
     "FeaturePlan",
     "FrequencyEncoder",
-    "MissingIndicatorNames",
     "add_time_series_features",
     "build_feature_plan",
     "build_pipeline",

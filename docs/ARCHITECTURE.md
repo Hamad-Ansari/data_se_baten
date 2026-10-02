@@ -131,6 +131,11 @@ even if the API process is not running.
 
 ## Extending
 
+* **Tests** — `tests/` mirrors the layers: `test_utils`, `test_data_quality`,
+  `test_pipeline` (supervised), `test_timeseries` (forecasting/clustering/anomaly),
+  `test_agent_workflow`, `test_orchestrator`, `test_api`. Add a module per layer;
+  `conftest.py` gives every test temporary directories and fast budgets.
+
 * **New algorithm** — add an `AlgorithmSpec` to `ml/registry.py` (task list,
   builder, param space, interpretability, speed, min samples). Selection, training,
   optimisation and explainability pick it up automatically.

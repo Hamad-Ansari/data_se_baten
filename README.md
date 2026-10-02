@@ -173,12 +173,15 @@ agent uses to re-tune before giving up.
 ## Testing
 
 ```bash
-.venv/bin/python -m pytest tests -q          # 32 tests, ~1 minute
+.venv/bin/python -m pytest tests -q          # 38 tests, ~1 minute
 .venv/bin/python run.py info                # dependency check
 ```
 
 The suite runs entirely on synthetic data in a temporary directory: it never
-touches `data/` and never calls an LLM.
+touches `data/` and never calls an LLM. It covers the helpers, the data-quality
+and cleaning stages, the supervised pipeline end to end, the unsupervised /
+forecasting / anomaly branches, the agent's approval checkpoint and resume, the
+orchestrator surface and every API route.
 
 ## Documentation
 
