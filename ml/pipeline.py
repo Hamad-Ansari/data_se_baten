@@ -247,6 +247,11 @@ def stage_eda(
     return report, figures
 
 
+#: stage_evaluate holds out this many top-ranked models for the test set;
+#: stage_cross_validate mirrors the same window so the winner always has a
+#: stability estimate, whichever stage it was trained in.
+EVALUATION_WINDOW = 3
+
 #: Column names that usually mark the outcome we should predict.
 TARGET_NAME_HINTS = (
     "target", "label", "outcome", "result", "response", "class", "y",
@@ -558,13 +563,17 @@ def stage_cross_validate(
     ctx: TrainingContext,
     records: Sequence[Experiment],
     *,
-    limit: int = 3,
+    limit: int = EVALUATION_WINDOW,
 ) -> Dict[str, Any]:
     """Cross-validate the most promising candidates for a stability estimate."""
     from ml.registry import get_algorithm
 
-    ranked = [record for record in rank_experiments(
-        [record for record in records if record.status == "ok"], ctx.primary_metric) if record.stage != "baseline"]
+    # Rank every trained model, baselines included: stage_evaluate picks the
+    # winner from the same top-``limit`` window, so skipping baselines here
+    # could leave the selected model without a stability estimate whenever a
+    # baseline (e.g. plain logistic regression) beats the tuned candidates.
+    ranked = rank_experiments(
+        [record for record in records if record.status == "ok"], ctx.primary_metric)
     payload: Dict[str, Any] = {}
     for record in ranked[:limit]:
         spec = get_algorithm(record.key)
@@ -689,7 +698,7 @@ def stage_evaluate(
             cv_by_key[experiment.key] = entry
     best_record: Optional[Experiment] = None
     best_pipeline = None
-    for record in rank_experiments(candidates, metric)[:3]:
+    for record in rank_experiments(candidates, metric)[:EVALUATION_WINDOW]:
         try:
             pipeline = store.load_model(record.model_artifact) if record.model_artifact else None
         except Exception as exc:  # pragma: no cover

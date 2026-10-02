@@ -531,7 +531,7 @@ def evaluation_node(state: Dict[str, Any], store: RunStore) -> Dict[str, Any]:
 
     payload = store.load_json("experiments.json", default={"experiments": []}) or {}
     records = [Experiment.from_dict(item) for item in payload.get("experiments", [])]
-    cv = P.stage_cross_validate(store, ctx, records, limit=3)
+    cv = P.stage_cross_validate(store, ctx, records, limit=P.EVALUATION_WINDOW)
     evaluation = P.stage_evaluate(store, ctx, records, primary_metric=None)
     selected = evaluation.get("selected") or {}
     best = evaluation.get("best_model") or {}

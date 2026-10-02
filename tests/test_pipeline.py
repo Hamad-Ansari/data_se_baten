@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+from types import SimpleNamespace
+
 import pandas as pd
 import pytest
 
@@ -128,6 +130,56 @@ def test_logistic_regression_builder_spans_sklearn_versions() -> None:
     # an L1 penalty needs a solver that supports it
     assert legacy.solver == "saga"
     assert not [item for item in caught if item.category is FutureWarning]
+
+
+def test_cross_validation_covers_a_baseline_that_wins(settings, monkeypatch) -> None:
+    """The stability window must match the evaluation window, baselines included.
+
+    stage_evaluate picks the winner from the top-ranked models, so if
+    stage_cross_validate filtered baselines out a winning baseline (a plain
+    logistic regression, say) would reach the gate with no cv_mean.
+    """
+    from ml import pipeline as P
+    from ml.training import Experiment, rank_experiments
+
+    calls: list[str] = []
+
+    def fake_cv(ctx, spec, *, params=None, feature_plan=None):
+        calls.append(spec.key)
+        return {"cv_scores": [0.70, 0.72, 0.68], "cv_mean": 0.70, "cv_std": 0.02}
+
+    monkeypatch.setattr(P, "cross_validate_experiment", fake_cv)
+
+    records = [
+        Experiment(experiment_id="baseline__logistic_regression__a", key="logistic_regression",
+                   name="Logistic Regression", stage="baseline", primary_value=0.81),
+        Experiment(experiment_id="candidate__lightgbm__b", key="lightgbm", name="LightGBM",
+                   stage="candidate", primary_value=0.79),
+        Experiment(experiment_id="candidate__catboost__c", key="catboost", name="CatBoost",
+                   stage="candidate", primary_value=0.77),
+        Experiment(experiment_id="optimized__xgboost__d", key="xgboost", name="XGBoost",
+                   stage="optimized", primary_value=0.75),
+    ]
+    ctx = SimpleNamespace(primary_metric="roc_auc", feature_plan=None)
+    store = RunStore.create("cv-window", run_id="cv-window")
+    store.save_json("experiments.json", {"experiments": [record.to_dict() for record in records]})
+
+    payload = P.stage_cross_validate(store, ctx, records)
+
+    # the CV window mirrors the one stage_evaluate selects from
+    assert P.stage_cross_validate.__kwdefaults__["limit"] == P.EVALUATION_WINDOW
+
+    # the winner (the logistic baseline) is cross-validated ...
+    assert "baseline__logistic_regression__a" in payload
+    # ... and the window is exactly the one stage_evaluate evaluates
+    window = [record.experiment_id for record in rank_experiments(records, "roc_auc")[:P.EVALUATION_WINDOW]]
+    assert set(payload) == set(window)
+    assert calls[0] == "logistic_regression"
+
+    # the estimate is persisted with the experiment and in the CV artifact
+    assert store.load_json("cross_validation.json")["baseline__logistic_regression__a"]["cv_mean"] == 0.70
+    stored = {item["experiment_id"]: item for item in store.load_json("experiments.json")["experiments"]}
+    assert stored["baseline__logistic_regression__a"]["cv_mean"] == 0.70
 
 
 def test_missing_model_raises_a_friendly_error(settings) -> None:
