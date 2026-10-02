@@ -1,0 +1,71 @@
+# =============================================================================
+# DATA_SE_BATEN -- core runtime requirements
+# -----------------------------------------------------------------------------
+# Install with:
+#   python -m venv .venv
+#   .venv\Scripts\Activate.ps1        (Windows PowerShell)
+#   source .venv/bin/activate         (Linux / macOS)
+#   python -m pip install --upgrade pip
+#   pip install -r requirements.txt
+#
+# Optional extras live in requirements-optional.txt (Prophet, UMAP, HDBSCAN,
+# MLflow, ...).  Every optional dependency is imported lazily, so the platform
+# runs without them and reports the feature as "unavailable" instead of
+# crashing.
+# =============================================================================
+
+# --- Core data handling ------------------------------------------------------
+pandas>=2.1
+numpy>=1.26
+scipy>=1.11
+scikit-learn>=1.3
+joblib>=1.3
+pyarrow>=14.0
+openpyxl>=3.1
+SQLAlchemy>=2.0
+
+# --- Statistics --------------------------------------------------------------
+statsmodels>=0.14
+
+# --- Gradient boosting (each one is optional at runtime) --------------------
+xgboost>=2.0
+lightgbm>=4.1
+catboost>=1.2
+
+# --- Hyper-parameter optimisation -------------------------------------------
+optuna>=3.4
+
+# --- Explainability ----------------------------------------------------------
+shap>=0.44
+
+# --- Visualisation -----------------------------------------------------------
+plotly>=5.18
+matplotlib>=3.8
+seaborn>=0.13
+
+# --- REST backend ------------------------------------------------------------
+fastapi>=0.110
+uvicorn[standard]>=0.27
+pydantic>=2.5
+pydantic-settings>=2.1
+python-multipart>=0.0.9
+
+# --- Agent runtime / LLM -----------------------------------------------------
+langgraph>=0.2
+langchain-core>=0.2
+httpx>=0.27
+
+# --- Analytical query engine -------------------------------------------------
+duckdb>=0.10
+
+# --- Frontend ----------------------------------------------------------------
+streamlit>=1.31
+
+# --- Configuration / utilities ----------------------------------------------
+python-dotenv>=1.0
+PyYAML>=6.0
+
+# --- Testing -----------------------------------------------------------------
+pytest>=8.0
+pytest-asyncio>=0.23
+requests>=2.31

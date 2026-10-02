@@ -1,0 +1,34 @@
+# =============================================================================
+# DATA_SE_BATEN -- optional extras
+# -----------------------------------------------------------------------------
+# These packages unlock extra capabilities.  None of them is required: the
+# platform detects them at runtime and degrades gracefully.
+#
+#   pip install -r requirements-optional.txt
+#   pip install -r requirements-optional.txt --no-deps shap  (etc.)
+# =============================================================================
+
+# Time-series forecasting: Facebook Prophet (heavy, pulls cmdstanpy)
+prophet>=1.1
+
+# Advanced clustering / dimensionality reduction
+hdbscan>=0.8.33
+umap-learn>=0.5.5
+
+# Experiment tracking UI + storage
+mlflow>=2.11
+
+# Vector store for the RAG knowledge base (optional, falls back to TF-IDF)
+faiss-cpu>=1.7.4
+sentence-transformers>=2.6
+
+# Excel legacy format + extra engines
+xlrd>=2.0
+pyxlsb>=1.0
+
+# Parquet/ORC fast paths
+fastparquet>=2024.2
+
+# Database drivers (install the one you need)
+psycopg2-binary>=2.9
+pymysql>=1.1
