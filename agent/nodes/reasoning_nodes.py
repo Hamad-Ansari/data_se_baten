@@ -26,9 +26,10 @@ from agent.prompts import (
 )
 from config.logging_setup import get_logger
 from config.settings import get_settings
+from ml.evaluation import selected_model
 from ml.persistence import RunStore
 from utils.files import utc_now_iso
-from utils.serialization import to_jsonable
+from utils.serialization import safe_float, to_jsonable
 from utils.text import truncate
 
 logger = get_logger(__name__)
@@ -148,14 +149,14 @@ def narrative_node(state: Dict[str, Any], store: RunStore) -> Dict[str, Any]:
         except Exception as exc:  # pragma: no cover
             logger.info("EDA narrative skipped: %s", exc)
         try:
-            selected = evaluation.get("selected_model") or {}
+            selected = selected_model(evaluation)
             response = client.structured(
                 evaluation_narrative_prompt(
                     {
                         "task": evaluation.get("primary_metric"),
                         "selected_model": selected.get("name"),
                         "validation": selected.get("validation_metrics"),
-                        "test": selected.get("test_metrics"),
+                        "test": selected.get("metrics"),
                         "baseline": (state.get("metrics") or {}).get("baseline_score"),
                         "cv_mean": selected.get("cv_mean"),
                     }
@@ -196,6 +197,12 @@ def narrative_node(state: Dict[str, Any], store: RunStore) -> Dict[str, Any]:
     }
 
 
+def _fmt_score(value: Any) -> str:
+    """Format a metric value for narrative text."""
+    number = safe_float(value)
+    return f"{number:.4f}" if number is not None else "n/a"
+
+
 def _deterministic_narratives(
     eda: Dict[str, Any],
     problem: Dict[str, Any],
@@ -204,8 +211,15 @@ def _deterministic_narratives(
     explanation: Dict[str, Any],
 ) -> Dict[str, Any]:
     """Template narratives computed from the artifacts (LLM-free fallback)."""
-    selected = evaluation.get("selected_model") or {}
-    metric = evaluation.get("primary_metric") or "the primary metric"
+    selected = selected_model(evaluation)
+    primary = evaluation.get("primary_metric")
+    metric = primary or "the primary metric"
+    # the selected entry keeps the test metrics under ``metrics`` and the
+    # validation score under ``validation_score``
+    test_score = (selected.get("metrics") or {}).get(primary) if primary else None
+    if test_score is None:
+        test_score = selected.get("primary_value")
+    validation_score = selected.get("validation_score") or (selected.get("validation_metrics") or {}).get(primary or "")
     insights = [item.get("text") for item in (eda.get("insights") or [])[:4]]
     return {
         "problem": {
@@ -224,10 +238,11 @@ def _deterministic_narratives(
         "evaluation": {
             "narrative": (
                 f"{selected.get('name', 'The selected model')} reached {metric} "
-                f"= {selected.get('test_value')} on the held-out test set "
-                f"(validation {selected.get('primary_value')}). "
+                f"= {_fmt_score(test_score)} on the held-out test set "
+                f"(validation {_fmt_score(validation_score)}). "
                 + (
-                    f"Cross-validation gave {selected.get('cv_mean')} ± {selected.get('cv_std')}."
+                    f"Cross-validation gave {_fmt_score(selected.get('cv_mean'))} "
+                    f"± {_fmt_score(selected.get('cv_std'))}."
                     if selected.get("cv_mean") is not None else ""
                 )
             ).strip(),
@@ -334,7 +349,7 @@ def build_dataset_context(store: RunStore, max_chars: int = 6000) -> Dict[str, A
     explanation = store.load_json("explanation.json", default={}) or {}
     gate = store.load_json("quality_gate.json", default={}) or {}
     cleaning = store.load_json("cleaning_log.json", default={}) or {}
-    selected = evaluation.get("selected_model") or {}
+    selected = selected_model(evaluation)
     context: Dict[str, Any] = {
         "run_id": store.run_id,
         "dataset": store.get("dataset_name"),
@@ -361,9 +376,11 @@ def build_dataset_context(store: RunStore, max_chars: int = 6000) -> Dict[str, A
         "candidates": [item.get("name") for item in (selection.get("candidates") or [])[:6]],
         "selected_model": {
             "name": selected.get("name"),
-            "primary_metric": selected.get("primary_metric"),
+            "primary_metric": selected.get("primary_metric") or evaluation.get("primary_metric"),
             "validation": selected.get("validation_metrics"),
-            "test": selected.get("test_metrics"),
+            "test": selected.get("metrics"),
+            "cv_mean": selected.get("cv_mean"),
+            "cv_std": selected.get("cv_std"),
         },
         "top_features": [item.get("feature") for item in (explanation.get("ranked_features") or [])[:8]],
         "gate": {"passed": gate.get("passed"), "score": gate.get("score")},

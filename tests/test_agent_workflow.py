@@ -27,6 +27,16 @@ def test_workflow_records_a_stage_history(settings, classification_csv) -> None:
     assert {"ingest", "profile", "quality", "clean", "detect", "train", "evaluate"} <= visited
     assert result["progress"]["percent"] == 100
 
+    # the deterministic evaluation narrative quotes the measured scores, not
+    # placeholders (the winner lives under ``selected`` in the payload)
+    store = RunStore.load(run_id)
+    narratives = store.load_json("narratives.json", default={}) or {}
+    evaluation_narrative = (narratives.get("evaluation") or {}).get("narrative", "")
+    selected = (store.load_json("evaluation.json", default={}) or {}).get("selected") or {}
+    assert selected["name"] in evaluation_narrative
+    assert "None" not in evaluation_narrative and "n/a" not in evaluation_narrative
+    assert f"{selected['metrics'][selected['primary_metric']]:.4f}" in evaluation_narrative
+
 
 def test_routing_helpers_cover_every_task() -> None:
     assert TASK_BRANCH["binary_classification"] == "supervised"

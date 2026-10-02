@@ -48,7 +48,24 @@ def test_supervised_pipeline_end_to_end(settings, classification_csv, tmp_path) 
     assert meta["dataset"]["rows"] > 0
 
     report = store.reports_path / "report.md"
-    assert report.exists() and len(report.read_text(encoding="utf-8")) > 2000
+    report_text = report.read_text(encoding="utf-8")
+    assert report.exists() and len(report_text) > 2000
+
+    # the evaluation section names the winner and shows its measured test metrics
+    # (the payload stores them under ``selected``, not the legacy ``selected_model``)
+    evaluation_section = report_text.split("## 12. Evaluation")[1].split("## 13.")[0]
+    assert meta["model"]["name"] in evaluation_section
+    assert "None" not in evaluation_section
+    assert "Test-set metrics" in evaluation_section and "No data available." not in evaluation_section
+    assert "Held-out test set:" in evaluation_section
+    # section 10 fills the test column for the models that were evaluated on it
+    model_section = report_text.split("## 10. Model results")[1].split("## 11.")[0]
+    winner_row = [
+        line for line in model_section.splitlines()
+        if line.startswith(f"| {meta['model']['name']} |") and f"| {selected['stage']} |" in line
+    ]
+    assert len(winner_row) == 1, winner_row
+    assert winner_row[0].split("|")[5].strip(), winner_row[0]
 
     # every stage recorded a terminal status
     stages = store.stage_summary()

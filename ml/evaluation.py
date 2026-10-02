@@ -455,6 +455,16 @@ def metric_explanation(metric: str) -> str:
     return metric_reason(metric)
 
 
+def selected_model(evaluation: Optional[Dict[str, Any]]) -> Dict[str, Any]:
+    """Return the winning model entry of an evaluation payload.
+
+    ``selected`` is the canonical key written by the pipeline; ``selected_model``
+    is a legacy alias kept so runs produced by older versions still render.
+    """
+    payload = evaluation or {}
+    return payload.get("selected") or payload.get("selected_model") or {}
+
+
 __all__ = [
     "anomaly_metrics",
     "classification_metrics",
@@ -467,5 +477,6 @@ __all__ = [
     "metric_summary_rows",
     "overfitting_gap",
     "regression_metrics",
+    "selected_model",
     "select_best_experiment",
 ]

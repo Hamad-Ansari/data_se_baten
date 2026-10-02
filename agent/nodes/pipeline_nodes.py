@@ -24,6 +24,7 @@ from config.constants import STATUS_COMPLETED, STATUS_PENDING
 from config.logging_setup import get_logger
 from config.settings import get_settings
 from ml import pipeline as P
+from ml.evaluation import selected_model
 from ml.persistence import RunStore
 from ml.tasks import TaskType
 from utils.errors import DataSenseError
@@ -514,7 +515,7 @@ def evaluation_node(state: Dict[str, Any], store: RunStore) -> Dict[str, Any]:
     """Cross-validate candidates and evaluate the best models on the test set."""
     if should_skip(state, store, "evaluate", "evaluation.json"):
         payload = store.load_json("evaluation.json", default={})
-        selected = payload.get("selected") or payload.get("selected_model") or {}
+        selected = selected_model(payload)
         return {
             **skip_update(state, "evaluate", "Evaluation already completed."),
             "evaluation": to_jsonable(payload),
@@ -774,7 +775,8 @@ def _llm_report_narrative(state: Dict[str, Any], store: RunStore) -> str:
     from agent.prompts import report_narrative_prompt
 
     evaluation = state.get("evaluation") or store.load_json("evaluation.json", default={}) or {}
-    selected = evaluation.get("selected_model") or {}
+    selected = selected_model(evaluation)
+    metric = evaluation.get("primary_metric") or selected.get("primary_metric")
     facts = {
         "dataset": (state.get("dataset_summary") or {}).get("name") or store.get("dataset_name"),
         "rows": (state.get("dataset_summary") or {}).get("rows"),
@@ -783,9 +785,9 @@ def _llm_report_narrative(state: Dict[str, Any], store: RunStore) -> str:
         "task": (state.get("problem") or {}).get("task"),
         "target": (state.get("problem") or {}).get("target"),
         "selected_model": selected.get("name"),
-        "primary_metric": evaluation.get("primary_metric"),
-        "validation_score": selected.get("primary_value"),
-        "test_score": selected.get("test_value"),
+        "primary_metric": metric,
+        "validation_score": selected.get("validation_score"),
+        "test_score": (selected.get("metrics") or {}).get(metric or ""),
         "baseline": (state.get("metrics") or {}).get("baseline_score"),
         "gate_passed": (state.get("gate") or {}).get("passed"),
         "top_features": (state.get("summary") or {}).get("top_features"),

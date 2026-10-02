@@ -20,6 +20,7 @@ from typing import Any, Dict, List, Optional, Sequence
 from config.constants import METRIC_INFO, TASK_LABELS
 from config.logging_setup import get_logger
 from config.settings import get_settings
+from ml.evaluation import selected_model as _selected
 from ml.tasks import TaskType, metric_direction, metric_label
 from utils.errors import ReportGenerationError
 from utils.files import utc_now_iso
@@ -155,7 +156,7 @@ def _executive_summary(artifacts: Dict[str, Any], narrative: Optional[str]) -> s
     run = artifacts.get("run", {})
     profile = artifacts.get("profile", {}) or {}
     problem = artifacts.get("problem", {}) or {}
-    model = (artifacts.get("evaluation") or {}).get("selected_model") or {}
+    model = _selected(artifacts.get("evaluation"))
     gate = artifacts.get("quality_gate") or {}
     lines = [
         "## 1. Executive summary",
@@ -484,10 +485,16 @@ def _model_results(artifacts: Dict[str, Any]) -> str:
         return "## 10. Model results\n\n_No experiment artifact is available._"
     records = experiments.get("experiments", [])
     primary = experiments.get("primary_metric", "accuracy")
+    # only the top-ranked models are scored on the held-out test set, and those
+    # scores live with the evaluation candidates keyed by experiment id
+    evaluated = {
+        item.get("experiment_id"): (item.get("metrics") or {})
+        for item in ((artifacts.get("evaluation") or {}).get("candidates") or [])
+    }
     rows = []
     for record in records:
         metrics = record.get("validation_metrics") or {}
-        test_metrics = record.get("test_metrics") or {}
+        test_metrics = record.get("test_metrics") or evaluated.get(record.get("experiment_id")) or {}
         rows.append(
             [
                 record.get("name"),
@@ -554,16 +561,22 @@ def _evaluation(artifacts: Dict[str, Any]) -> str:
     evaluation = artifacts.get("evaluation")
     if not evaluation:
         return "## 12. Evaluation\n\n_No evaluation artifact is available._"
-    model = evaluation.get("selected_model") or {}
-    metrics = model.get("test_metrics") or {}
+    model = _selected(evaluation)
+    # the selected entry merges the test metrics into ``metrics`` and also carries
+    # them at the top level; the row counts live on the evaluation payload
+    metrics = model.get("metrics") or model.get("test_metrics") or {}
     validation_metrics = model.get("validation_metrics") or {}
-    primary = model.get("primary_metric", "accuracy")
+    primary = model.get("primary_metric") or evaluation.get("primary_metric") or "accuracy"
+    test_rows = evaluation.get("test_rows") or model.get("test_rows") or model.get("n_samples") or 0
+    validation_rows = evaluation.get("validation_rows") or model.get("validation_rows") or 0
+    train_rows = evaluation.get("train_rows") or model.get("training_rows") or 0
     lines = [
         "## 12. Evaluation",
         "",
-        f"**Selected model:** {model.get('name')} (`{model.get('algorithm_key')}`)",
-        f"**Held-out test set:** {model.get('test_rows', 0):,} rows | "
-        f"**Validation:** {model.get('validation_rows', 0):,} rows | **Training:** {model.get('training_rows', 0):,} rows",
+        f"**Selected model:** {model.get('name')} (`{model.get('key') or model.get('algorithm_key')}`, "
+        f"trained as {model.get('stage') or 'n/a'})",
+        f"**Held-out test set:** {test_rows:,} rows | "
+        f"**Validation:** {validation_rows:,} rows | **Training:** {train_rows:,} rows",
         "",
         "**Test-set metrics**",
         "",
@@ -573,6 +586,16 @@ def _evaluation(artifacts: Dict[str, Any]) -> str:
         "",
         _metric_table(validation_metrics, primary),
     ]
+    if model.get("cv_mean") is not None:
+        folds = len(model.get("cv_scores") or [])
+        method = f" ({model['cv_method']})" if model.get("cv_method") else ""
+        lines.extend([
+            "",
+            f"**Cross-validation:** {metric_label(primary)} {float(model['cv_mean']):.4f} "
+            f"± {float(model.get('cv_std') or 0):.4f}"
+            + (f" across {folds} fold(s)" if folds else "")
+            + f"{method}.",
+        ])
     confusion = metrics.get("confusion_matrix")
     if confusion:
         labels = confusion.get("labels", [])
@@ -728,7 +751,7 @@ def _limitations(artifacts: Dict[str, Any]) -> str:
     profile = artifacts.get("profile") or {}
     quality = artifacts.get("quality") or {}
     evaluation = artifacts.get("evaluation") or {}
-    model = evaluation.get("selected_model") or {}
+    model = _selected(evaluation)
     gate = artifacts.get("quality_gate") or {}
     items: List[str] = []
     rows = profile.get("rows", 0)
@@ -744,9 +767,10 @@ def _limitations(artifacts: Dict[str, Any]) -> str:
         )
     if not gate.get("passed"):
         items.append("The quality gate did not pass - see section 15 for the blocking checks.")
-    if model.get("test_rows"):
+    test_rows = evaluation.get("test_rows") or model.get("test_rows") or model.get("n_samples") or 0
+    if test_rows:
         items.append(
-            f"The test estimate is based on {model['test_rows']:,} rows; re-evaluating on a different period or "
+            f"The test estimate is based on {test_rows:,} rows; re-evaluating on a different period or "
             "sample will shift the numbers."
         )
     items.append(
@@ -860,7 +884,7 @@ def _report_summary(artifacts: Dict[str, Any], store: Any) -> Dict[str, Any]:
     quality = artifacts.get("quality") or {}
     problem = artifacts.get("problem") or {}
     evaluation = artifacts.get("evaluation") or {}
-    model = evaluation.get("selected_model") or {}
+    model = _selected(evaluation)
     gate = artifacts.get("quality_gate") or {}
     return to_jsonable(
         {
@@ -876,7 +900,10 @@ def _report_summary(artifacts: Dict[str, Any], store: Any) -> Dict[str, Any]:
             "selected_model": model.get("name"),
             "primary_metric": model.get("primary_metric"),
             "primary_value": model.get("primary_value"),
-            "test_value": safe_float((model.get("test_metrics") or {}).get(model.get("primary_metric", ""))),
+            "test_value": safe_float(
+                (model.get("metrics") or model.get("test_metrics") or {})
+                .get(model.get("primary_metric") or "")
+            ),
             "gate_passed": gate.get("passed"),
             "gate_score": gate.get("score"),
             "best_model": (store.get("model") or {}).get("name") if hasattr(store, "get") else None,
