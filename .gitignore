@@ -1,0 +1,51 @@
+# --- python -------------------------------------------------------------
+__pycache__/
+*.py[cod]
+*.egg-info/
+.eggs/
+build/
+dist/
+.mypy_cache/
+.pytest_cache/
+.ruff_cache/
+.coverage
+htmlcov/
+.tox/
+.nox/
+
+# --- environments -------------------------------------------------------
+.venv/
+venv/
+env/
+.env
+.env.*
+!.env.example
+
+# --- generated artifacts (never commit models or run data) --------------
+data/processed/
+data/uploads/
+data/state/
+data/exports/
+models/*
+!models/.gitkeep
+reports/*
+!reports/.gitkeep
+logs/*
+!logs/.gitkeep
+mlruns/
+*.joblib
+*.pkl
+*.parquet
+*.sqlite
+*.db
+
+# --- notebooks / editors ------------------------------------------------
+.ipynb_checkpoints/
+.idea/
+.vscode/
+*.swp
+.DS_Store
+
+# --- keep the samples + knowledge docs ----------------------------------
+!data/samples/
+!data/knowledge/
