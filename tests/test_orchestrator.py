@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+import pytest
+
 from ml.persistence import RunStore
 from orchestrator import (
     compare_runs,
@@ -62,3 +64,71 @@ def test_compare_runs_and_delete(settings, run_id: str) -> None:
 
     assert delete_run(other) is True
     assert not RunStore.exists(other)
+
+def test_deterministic_runner_skips_the_agent(settings, classification_csv) -> None:
+    """``run_analysis(agent=False)`` drives the pipeline without the graph.
+
+    ``run.py analyze --no-agent`` calls this path; nothing else exercised it, so
+    the CLI used to fail with a TypeError on an unsupported kwarg.
+    """
+    from orchestrator import run_analysis
+
+    result = run_analysis(
+        classification_csv,
+        target="churn",
+        run_id="deterministic-run",
+        agent=False,
+        constraints={"max_candidates": 2},
+    )
+    assert result["mode"] == "deterministic"
+    assert result["status"] == "completed"
+
+    store = RunStore.load("deterministic-run")
+    assert store.get("status") == "completed"
+    assert store.load_json("evaluation.json", default=None)
+    assert (store.reports_path / "report.md").exists()
+    # the agent stage only exists when the graph ran
+    assert "agent" not in store.stage_summary()
+
+
+def test_deterministic_runner_rejects_other_task_families(settings, classification_csv) -> None:
+    from orchestrator import list_runs, run_analysis
+    from utils.errors import DataSenseError
+
+    before = {row["run_id"] for row in list_runs(limit=50)}
+    with pytest.raises(DataSenseError) as excinfo:
+        run_analysis(classification_csv, task="clustering", agent=False)
+    assert "--no-agent" in excinfo.value.user_message
+    # the rejected request must not leave an empty run behind
+    assert {row["run_id"] for row in list_runs(limit=50)} == before
+
+
+def test_analyze_cli_passes_the_agent_flag(settings, classification_csv, monkeypatch) -> None:
+    """A smoke test for the CLI wiring itself (argparse -> run_analysis)."""
+    import run as run_cli
+
+    captured: dict[str, object] = {}
+
+    def fake_run_analysis(path, **kwargs):
+        captured["path"] = path
+        captured.update(kwargs)
+        return {"run_id": "fake", "status": "completed"}
+
+    monkeypatch.setattr("orchestrator.run_analysis", fake_run_analysis)
+    exit_code = run_cli.main(["analyze", str(classification_csv), "--no-agent",
+                              "--target", "churn", "--max-candidates", "2"])
+    assert exit_code == 0
+    assert str(captured["path"]).endswith("customer_churn.csv")
+    assert captured["agent"] is False
+    assert captured["target"] == "churn"
+    assert captured["constraints"] == {"max_candidates": 2}
+    # the agent path stays the default
+    assert run_cli.main(["analyze", str(classification_csv)]) == 0
+    assert captured["agent"] is True and captured["constraints"] is None
+
+
+def test_analyze_cli_reports_user_errors(settings, classification_csv, capsys) -> None:
+    import run as run_cli
+
+    assert run_cli.main(["analyze", str(classification_csv), "--task", "clustering", "--no-agent"]) == 1
+    assert "--no-agent" in capsys.readouterr().err

@@ -173,7 +173,7 @@ agent uses to re-tune before giving up.
 ## Testing
 
 ```bash
-.venv/bin/python -m pytest tests -q          # 39 tests, ~1 minute
+.venv/bin/python -m pytest tests -q          # 43 tests, ~1.5 minutes
 .venv/bin/python run.py info                # dependency check
 ```
 

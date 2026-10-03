@@ -91,11 +91,20 @@ def run_analysis(
     auto_approve: bool = True,
     run_id: Optional[str] = None,
     ingest_options: Optional[Dict[str, Any]] = None,
+    agent: bool = True,
     on_event: Optional[Callable[[str, Dict[str, Any]], None]] = None,
 ) -> Dict[str, Any]:
-    """Create a run and execute the full agent workflow (blocking)."""
+    """Create a run and execute it (blocking).
+
+    With ``agent=True`` the full LangGraph workflow runs (all task families).
+    With ``agent=False`` the deterministic pipeline runs instead, which covers
+    supervised tasks (classification/regression); the other task families are
+    driven by the agent workflow.
+    """
     from agent.workflow import run_workflow
 
+    if not agent:
+        _validate_deterministic_task(task)
     run_id = create_run(
         dataset_path,
         run_id=run_id,
@@ -106,6 +115,16 @@ def run_analysis(
         auto_approve=auto_approve,
         ingest_options=ingest_options,
     )
+    if not agent:
+        return _run_deterministic(
+            run_id,
+            target=target,
+            task=task,
+            constraints=constraints,
+            requirements=requirements,
+            auto_approve=auto_approve,
+            on_event=on_event,
+        )
     result = run_workflow(
         run_id,
         dataset_path=str(RunStore.load(run_id).get("source_file")),
@@ -120,6 +139,62 @@ def run_analysis(
         on_event=on_event,
     )
     return {**result, "run_id": run_id}
+
+
+def _validate_deterministic_task(task: Optional[str]) -> None:
+    """The deterministic runner only drives supervised tasks."""
+    from ml.tasks import is_supervised
+
+    from utils.errors import ConfigurationError
+
+    if task is not None and not is_supervised(task):
+        raise ConfigurationError(
+            f"The deterministic runner does not drive '{task}'.",
+            user_message=(
+                f"'{task}' analyses are driven by the agent workflow, so --no-agent is not "
+                "available for them. Drop the flag to run it."
+            ),
+        )
+
+
+def _run_deterministic(
+    run_id: str,
+    *,
+    target: Optional[str] = None,
+    task: Optional[str] = None,
+    constraints: Optional[Dict[str, Any]] = None,
+    requirements: Optional[Dict[str, Any]] = None,
+    auto_approve: bool = True,
+    on_event: Optional[Callable[[str, Dict[str, Any]], None]] = None,
+) -> Dict[str, Any]:
+    """Run the staged pipeline without the agent graph (supervised tasks)."""
+    from ml.pipeline import run_supervised
+
+    _validate_deterministic_task(task)
+    store = RunStore.load(run_id)
+
+    def _progress(stage: str, payload: Dict[str, Any]) -> None:
+        if on_event is not None:
+            on_event(stage, payload)
+
+    result = run_supervised(
+        store,
+        store.get("source_file") or run_id,
+        target=target,
+        task=task,
+        constraints=constraints,
+        requirements=requirements,
+        auto_approve=auto_approve,
+        filename=store.get("original_filename"),
+        progress_cb=_progress if on_event is not None else None,
+    )
+    logger.info("Deterministic run %s finished (agent skipped)", run_id)
+    return {
+        "run_id": run_id,
+        "status": store.get("status"),
+        "mode": "deterministic",
+        "result": result.to_dict(),
+    }
 
 
 def resume_run(run_id: str, *, approvals: Optional[List[str]] = None,

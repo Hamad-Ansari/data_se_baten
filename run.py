@@ -90,19 +90,24 @@ def cmd_samples(args: argparse.Namespace) -> int:
 
 def cmd_analyze(args: argparse.Namespace) -> int:
     from orchestrator import run_analysis
+    from utils.errors import DataSenseError
 
     path = Path(args.dataset).expanduser()
     if not path.exists():
         print(f"Dataset not found: {path}", file=sys.stderr)
         return 2
-    result = run_analysis(
-        path,
-        target=args.target,
-        task=args.task,
-        auto_approve=not args.require_approval,
-        constraints={"max_candidates": args.max_candidates} if args.max_candidates else None,
-        agent=not args.no_agent,
-    )
+    try:
+        result = run_analysis(
+            path,
+            target=args.target,
+            task=args.task,
+            auto_approve=not args.require_approval,
+            constraints={"max_candidates": args.max_candidates} if args.max_candidates else None,
+            agent=not args.no_agent,
+        )
+    except DataSenseError as exc:
+        print(exc.user_message, file=sys.stderr)
+        return 1
     print(json.dumps(result if isinstance(result, dict) else {"result": str(result)}, indent=2, default=str))
     return 0
 
